@@ -1,4 +1,4 @@
-name: Build PonWrt-DPI
+name: Build PonWrt-DPI v1
 on:
   workflow_dispatch:
     inputs:
