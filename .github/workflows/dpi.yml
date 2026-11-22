@@ -1,0 +1,87 @@
+name: Build PonWrt-DPI
+on:
+  workflow_dispatch:
+    inputs:
+      target:
+        description: target
+        required: true
+        default: an7581
+        type: string
+permissions:
+  contents: read
+jobs:
+  build:
+    name: Build an7581 DPI
+    runs-on: ubuntu-24.04
+    timeout-minutes: 350
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Free space
+        run: |
+          sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc /opt/hostedtoolcache
+          sudo apt-get clean
+
+      - name: Install deps
+        env:
+          DEBIAN_FRONTEND: noninteractive
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            asciidoc autoconf automake autopoint binutils bison build-essential \
+            bzip2 ccache clang cmake cpio curl device-tree-compiler flex gawk \
+            gettext git g++-multilib gcc-multilib gperf help2man intltool \
+            libelf-dev libglib2.0-dev libgmp3-dev libltdl-dev libmpc-dev \
+            libmpfr-dev libncurses-dev libpython3-dev libreadline-dev libssl-dev \
+            libtool libyaml-dev lld llvm ninja-build p7zip-full patch pkgconf \
+            python3 python3-docutils python3-pip python3-ply python3-pyelftools \
+            qemu-utils re2c rsync scons squashfs-tools subversion swig texinfo \
+            uglifyjs unzip wget xmlto xxd zlib1g-dev zstd rsync time
+
+      - name: Cache dl
+        uses: actions/cache@v4
+        with:
+          path: dl
+          key: dpi-dl-${{ hashFiles('feeds.conf.default','configs/dpi.config') }}
+          restore-keys: dpi-dl-
+
+      - name: Feeds
+        run: |
+          ./scripts/feeds update -a
+          ./scripts/feeds install -a
+
+      - name: Configure
+        run: |
+          cp configs/dpi.config .config
+          make defconfig
+          echo "=== 关键配置核对 ==="
+          for k in kmod-fwx fwxd luci-app-fwx-dashboard luci-app-fwx-appfilter luci-app-fwx-user-record luci-app-fwx-record; do
+            grep -E "^(CONFIG_PACKAGE_$k=|# CONFIG_PACKAGE_$k is not set)" .config || echo "MISSING $k"
+          done
+          grep -E "^CONFIG_TARGET_DEVICE_.*nokia_xg-040g-md-ubi" .config
+
+      - name: Download
+        run: make download -j8 || make download -j1 V=s
+
+      - name: Build
+        run: make -j$(nproc) V=s 2>&1 | tail -n 2000
+
+      - name: Pack
+        if: always()
+        run: |
+          mkdir -p out
+          cp -v bin/targets/airoha/an7581/*.itb bin/targets/airoha/an7581/*.bin out/ 2>/dev/null || true
+          ls -lh out || true
+
+      - name: Upload
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: ponwrt-dpi-an7581
+          path: out/*
+          if-no-files-found: warn
+          retention-days: 7
+
+      - name: Log tail on failure
+        if: failure()
+        run: echo "build failed, see build log above"
