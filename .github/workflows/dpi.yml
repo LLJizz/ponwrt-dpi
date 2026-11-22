@@ -64,13 +64,16 @@ jobs:
         run: make download -j8 || make download -j1 V=s
 
       - name: Build
-        run: make -j$(nproc) V=s 2>&1 | tail -n 2000
+        run: |
+          set -o pipefail
+          make -j$(nproc) V=s 2>&1 | tee /tmp/build.log | tail -n 400
+          echo "BUILD_OK"
 
       - name: Pack
         if: always()
         run: |
           mkdir -p out
-          cp -v bin/targets/airoha/an7581/*.itb bin/targets/airoha/an7581/*.bin out/ 2>/dev/null || true
+          find bin/targets/airoha/an7581 -maxdepth 2 -type f \( -name '*.itb' -o -name '*.bin' -o -name '*.img' \) -exec cp -v {} out/ \; || true
           ls -lh out || true
 
       - name: Upload
