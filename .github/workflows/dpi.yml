@@ -54,11 +54,22 @@ jobs:
         run: |
           cp configs/dpi.config .config
           make defconfig
-          echo "=== 关键配置核对 ==="
-          for k in kmod-fwx fwxd luci-app-fwx-dashboard luci-app-fwx-appfilter luci-app-fwx-user-record luci-app-fwx-record; do
-            grep -E "^(CONFIG_PACKAGE_$k=|# CONFIG_PACKAGE_$k is not set)" .config || echo "MISSING $k"
+          echo "=== 必备包强校验（缺一个直接失败）==="
+          FAIL=0
+          for k in uhttpd uhttpd-mod-ubus luci-mod-network luci-mod-status luci-mod-system \
+                   luci-app-firewall luci-app-package-manager luci-compat luci-lua-runtime \
+                   kmod-fwx fwxd libfwx_common luci-theme-fanchmwrt \
+                   luci-app-fwx-dashboard luci-app-fwx-appfilter luci-app-fwx-user-record \
+                   luci-app-fwx-record luci-app-fwx-traffic-stat luci-app-fwx-user; do
+            if grep -qE "^CONFIG_PACKAGE_$k=y$" .config; then
+              echo "  OK   $k"
+            else
+              echo "  FAIL $k"; FAIL=1
+            fi
           done
-          grep -E "^CONFIG_TARGET_DEVICE_.*nokia_xg-040g-md-ubi" .config
+          echo "=== 目标机型 ==="
+          grep -E "^CONFIG_TARGET_DEVICE_airoha_an7581_DEVICE_.*=y$" .config
+          test $FAIL -eq 0 || { echo "配置缺包，终止"; exit 1; }
 
       - name: Download
         run: make download -j8 || make download -j1 V=s
@@ -74,7 +85,12 @@ jobs:
         run: |
           mkdir -p out
           find bin/targets/airoha/an7581 -maxdepth 2 -type f \( -name '*.itb' -o -name '*.bin' -o -name '*.img' \) -exec cp -v {} out/ \; || true
+          cp -v bin/targets/airoha/an7581/*.manifest out/ 2>/dev/null || true
           ls -lh out || true
+          echo "=== 镜像内包清单核验 ==="
+          for k in uhttpd luci-mod-network luci-app-firewall kmod-fwx fwxd luci-theme-fanchmwrt; do
+            if grep -qE "^$k " out/*nokia_xg-040g-md-ubi.manifest 2>/dev/null; then echo "  OK   $k"; else echo "  FAIL $k"; fi
+          done
 
       - name: Upload
         if: always()
